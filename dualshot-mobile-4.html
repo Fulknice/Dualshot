@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>DualShot</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap');
+
+  :root {
+    --bg: #080810;
+    --surface: #10101c;
+    --border: #1c1c2e;
+    --red: #ff3355;
+    --teal: #00e5b0;
+    --amber: #ffb800;
+    --text: #eeeef8;
+    --muted: #4a4a6a;
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* TOP BAR */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; }
+  .logo span { color: var(--red); }
+
+  .timer-display {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--red);
+    letter-spacing: 2px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .timer-display.on { opacity: 1; }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+  }
+  .status-dot.live { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+  .status-dot.rec { background: var(--red); animation: blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  /* MAIN VIDEO SOURCE */
+  .source-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  #vidSrc {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+    transform: scaleX(-1); /* mirror selfie */
+  }
+  #vidSrc.rear { transform: scaleX(1); }
+
+  .source-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: repeating-linear-gradient(
+      45deg,
+      rgba(28,28,46,0.8), rgba(28,28,46,0.8) 8px,
+      rgba(16,16,28,0.8) 8px, rgba(16,16,28,0.8) 16px
+    );
+  }
+  .placeholder-icon { font-size: 2.5rem; opacity: 0.3; }
+  .placeholder-txt { font-family: 'DM Mono', monospace; font-size: 0.7rem; color: var(--muted); }
+
+  /* CROP BOXES on source */
+  .crop-box {
+    position: absolute;
+    pointer-events: none;
+    border-radius: 3px;
+    transition: all 0.4s ease;
+  }
+  .crop-box.c1 { border: 2px solid var(--teal); background: rgba(0,229,176,0.05); }
+  .crop-box.c2 { border: 2px solid var(--amber); background: rgba(255,184,0,0.05); }
+
+  .crop-label {
+    position: absolute;
+    bottom: -18px;
+    left: 0;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.55rem;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    padding: 2px 5px;
+    border-radius: 3px;
+  }
+  .c1 .crop-label { background: rgba(0,229,176,0.15); color: var(--teal); }
+  .c2 .crop-label { background: rgba(255,184,0,0.15); color: var(--amber); }
+
+  .source-label {
+    position: absolute;
+    top: 8px; left: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.6rem;
+    background: rgba(0,0,0,0.5);
+    color: var(--muted);
+    padding: 3px 8px;
+    border-radius: 4px;
+    backdrop-filter: blur(4px);
+  }
+
+  /* REC badge */
+  .rec-badge {
+    position: absolute;
+    top: 8px; right: 8px;
+    background: var(--red);
+    color: white;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 1.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .rec-badge.show { opacity: 1; }
+
+  /* OUTPUT PREVIEWS */
+  .outputs-row {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .outputs-row::-webkit-scrollbar { display: none; }
+
+  .out-card {
+    flex-shrink: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+    transition: border-color 0.3s;
+  }
+  .out-card.active-fmt { border-color: rgba(0,229,176,0.35); }
+
+  .out-card canvas { display: block; }
+
+  .out-label {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,0.75));
+    font-family: 'DM Mono', monospace;
+    font-size: 0.55rem;
+    color: var(--teal);
+    text-align: center;
+    padding: 10px 4px 5px;
+    letter-spacing: 0.5px;
+  }
+
+  .out-ratio {
+    position: absolute;
+    top: 5px; right: 5px;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.5rem;
+    color: var(--muted);
+    background: rgba(0,0,0,0.4);
+    padding: 2px 5px;
+    border-radius: 3px;
+  }
+
+  .out-rec {
+    position: absolute;
+    top: 5px; left: 5px;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--red);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .out-rec.show { opacity: 1; animation: blink 1s infinite; }
+
+  /* FORMAT PICKERS */
+  .pickers {
+    padding: 0 16px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .picker-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .picker-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.6rem;
+    color: var(--muted);
+    width: 50px;
+    flex-shrink: 0;
+    letter-spacing: 0.5px;
+  }
+
+  .picker-label span {
+    display: block;
+    font-size: 0.5rem;
+    margin-top: 1px;
+  }
+
+  .fmt-chips {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+
+  .chip {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.6rem;
+    padding: 5px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+  }
+
+  .chip.on1 { border-color: rgba(0,229,176,0.5); background: rgba(0,229,176,0.08); color: var(--teal); }
+  .chip.on2 { border-color: rgba(255,184,0,0.5); background: rgba(255,184,0,0.08); color: var(--amber); }
+
+  /* DIVIDER */
+  .divider { height: 1px; background: var(--border); margin: 4px 16px; }
+
+  /* BIG BUTTONS */
+  .actions {
+    padding: 12px 16px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .btn-cam {
+    width: 100%;
+    padding: 16px;
+    border-radius: 14px;
+    border: none;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: all 0.2s;
+    background: var(--red);
+    color: white;
+  }
+
+  .btn-cam:active { transform: scale(0.97); }
+
+  .btn-cam.recording {
+    background: var(--surface);
+    border: 2px solid var(--red);
+    color: var(--red);
+    animation: pulse 1.5s infinite;
+  }
+
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(255,51,85,0.4); }
+    50% { box-shadow: 0 0 0 10px rgba(255,51,85,0); }
+  }
+
+  .btn-row2 {
+    display: flex;
+    gap: 8px;
+  }
+
+  .btn-sm {
+    flex: 1;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.72rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+    letter-spacing: 0.5px;
+  }
+  .btn-sm:active { transform: scale(0.96); }
+  .btn-sm:disabled { opacity: 0.3; pointer-events: none; }
+
+  /* NO CAM placeholders on outputs */
+  .out-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    opacity: 0.2;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">Dual<span>Shot</span></div>
+  <div class="timer-display" id="timerDisp">00:00:00</div>
+  <div class="status-dot" id="statusDot"></div>
+</div>
+
+<!-- SOURCE VIDEO -->
+<div class="source-wrap" id="sourceWrap">
+  <video id="vidSrc" autoplay muted playsinline></video>
+
+  <div class="source-placeholder" id="placeholder">
+    <div class="placeholder-icon">📷</div>
+    <div class="placeholder-txt">Appuie sur "Activer la caméra"</div>
+  </div>
+
+  <div class="source-label">SOURCE 16:9</div>
+  <div class="rec-badge" id="recBadge"><div style="width:5px;height:5px;border-radius:50%;background:white;animation:blink 1s infinite"></div> REC</div>
+
+  <!-- Crop overlays injected by JS -->
+  <div class="crop-box c1" id="box1"><div class="crop-label" id="lbl1">Sortie 1</div></div>
+  <div class="crop-box c2" id="box2"><div class="crop-label" id="lbl2">Sortie 2</div></div>
+</div>
+
+<!-- OUTPUT PREVIEWS -->
+<div class="outputs-row">
+  <div class="out-card active-fmt" id="outCard1" style="height:120px;">
+    <canvas id="cv1"></canvas>
+    <div class="out-placeholder" id="ph1">▶</div>
+    <div class="out-label" id="outLbl1">YouTube Shorts</div>
+    <div class="out-ratio" id="outRat1">9:16</div>
+    <div class="out-rec" id="outRec1"></div>
+  </div>
+  <div class="out-card active-fmt" id="outCard2" style="height:120px;">
+    <canvas id="cv2"></canvas>
+    <div class="out-placeholder" id="ph2">▶</div>
+    <div class="out-label" id="outLbl2">Facebook Carré</div>
+    <div class="out-ratio" id="outRat2">1:1</div>
+    <div class="out-rec" id="outRec2"></div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- FORMAT PICKERS -->
+<div class="pickers">
+  <div class="picker-row">
+    <div class="picker-label" style="color:var(--teal)">Sortie 1<span>▬ vert</span></div>
+    <div class="fmt-chips" id="chips1">
+      <button class="chip on1" data-r="9,16" data-n="YouTube Shorts">9:16</button>
+      <button class="chip" data-r="4,5" data-n="Instagram Reel">4:5</button>
+      <button class="chip" data-r="16,9" data-n="YouTube Classic">16:9</button>
+    </div>
+  </div>
+  <div class="picker-row">
+    <div class="picker-label" style="color:var(--amber)">Sortie 2<span>▬ amber</span></div>
+    <div class="fmt-chips" id="chips2">
+      <button class="chip on2" data-r="1,1" data-n="Facebook Carré">1:1</button>
+      <button class="chip" data-r="9,16" data-n="TikTok">TikTok</button>
+      <button class="chip" data-r="16,9" data-n="Facebook 16:9">16:9</button>
+    </div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ACTIONS -->
+<div class="actions">
+  <button class="btn-cam" id="btnMain">📷 Activer la caméra</button>
+  <div class="btn-row2">
+    <button class="btn-sm" id="btnFlip" disabled>⇄ Retourner</button>
+    <button class="btn-sm" id="btnInfo">ℹ Comment ça marche</button>
+  </div>
+</div>
+
+<script>
+  // ── State
+  let stream = null;
+  let camOn = false;
+  let recOn = false;
+  let facingMode = 'environment';
+  let timerSec = 0;
+  let timerInt = null;
+  let raf = null;
+
+  // MediaRecorder for real recording
+  let mr1 = null, mr2 = null;
+  let chunks1 = [], chunks2 = [];
+
+  // High-res canvases for recording (separate from display)
+  const recCv1 = document.createElement('canvas');
+  const recCv2 = document.createElement('canvas');
+  const recCtx1 = recCv1.getContext('2d');
+  const recCtx2 = recCv2.getContext('2d');
+
+  let ratio1 = [9,16];
+  let ratio2 = [1,1];
+  let name1 = 'YouTube Shorts';
+  let name2 = 'Facebook Carré';
+
+  const vidSrc = document.getElementById('vidSrc');
+  const cv1 = document.getElementById('cv1');
+  const cv2 = document.getElementById('cv2');
+  const ctx1 = cv1.getContext('2d');
+  const ctx2 = cv2.getContext('2d');
+
+  // Pick best supported MIME type
+  function getMime() {
+    const types = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4'];
+    for (const t of types) { if (MediaRecorder.isTypeSupported(t)) return t; }
+    return '';
+  }
+  function getExt(mime) { return mime.includes('mp4') ? 'mp4' : 'webm'; }
+
+  // Fix WebM missing duration metadata
+  function fixWebmDuration(blob, durationMs) {
+    return new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const buf = new Uint8Array(e.target.result);
+        for (let i = 0; i < buf.length - 4; i++) {
+          if (buf[i] === 0x44 && buf[i+1] === 0x89) {
+            const view = new DataView(buf.buffer);
+            const size = buf[i+2];
+            if (size === 0x84) view.setFloat32(i+3, durationMs, false);
+            else if (size === 0x88) view.setFloat64(i+3, durationMs, false);
+            break;
+          }
+        }
+        resolve(new Blob([buf], {type: blob.type}));
+      };
+      reader.readAsArrayBuffer(blob);
+    });
+  }
+
+  // ── Camera
+  document.getElementById('btnMain').addEventListener('click', async () => {
+    if (!camOn) {
+      await startCamera();
+    } else {
+      toggleRecord();
+    }
+  });
+
+  async function startCamera() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode, width:{ideal:1920}, height:{ideal:1080} },
+        audio: true
+      });
+      vidSrc.srcObject = stream;
+      vidSrc.className = facingMode === 'user' ? '' : 'rear';
+      camOn = true;
+
+      document.getElementById('placeholder').style.display = 'none';
+      document.getElementById('ph1').style.display = 'none';
+      document.getElementById('ph2').style.display = 'none';
+      document.getElementById('btnFlip').disabled = false;
+
+      const btn = document.getElementById('btnMain');
+      btn.innerHTML = '⏺ Démarrer l\'enregistrement';
+      btn.style.background = 'var(--teal)';
+      btn.style.color = '#000';
+
+      document.getElementById('statusDot').className = 'status-dot live';
+
+      startRender();
+    } catch(e) {
+      alert('❌ Caméra non accessible.\n\n' + e.message);
+    }
+  }
+
+  function toggleRecord() {
+    recOn = !recOn;
+    const btn = document.getElementById('btnMain');
+
+    if (recOn) {
+      // ── START real recording
+      chunks1 = []; chunks2 = [];
+      const mime = getMime();
+
+      // Set high-res recording canvases
+      const vw = vidSrc.videoWidth || 1280;
+      const vh = vidSrc.videoHeight || 720;
+      function setRecCanvas(canvas, r) {
+        const ar = r[0]/r[1], sar = vw/vh;
+        let sw, sh;
+        if (sar > ar) { sh=vh; sw=Math.round(vh*ar); }
+        else          { sw=vw; sh=Math.round(vw/ar); }
+        canvas.width = sw; canvas.height = sh;
+      }
+      setRecCanvas(recCv1, ratio1);
+      setRecCanvas(recCv2, ratio2);
+
+      const stream1 = recCv1.captureStream(30);
+      const stream2 = recCv2.captureStream(30);
+
+      // Add audio track to both
+      const audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack) {
+        stream1.addTrack(audioTrack);
+        stream2.addTrack(audioTrack);
+      }
+
+      try {
+        mr1 = new MediaRecorder(stream1, mime ? {mimeType: mime} : {});
+        mr2 = new MediaRecorder(stream2, mime ? {mimeType: mime} : {});
+      } catch(e) {
+        mr1 = new MediaRecorder(stream1);
+        mr2 = new MediaRecorder(stream2);
+      }
+
+      mr1.ondataavailable = e => { if(e.data.size>0) chunks1.push(e.data); };
+      mr2.ondataavailable = e => { if(e.data.size>0) chunks2.push(e.data); };
+
+      mr1.start(100); mr2.start(100);
+
+      btn.innerHTML = '⏹ Arrêter l\'enregistrement';
+      btn.classList.add('recording');
+      btn.style.background = '';
+      btn.style.color = '';
+      document.getElementById('recBadge').classList.add('show');
+      document.getElementById('outRec1').classList.add('show');
+      document.getElementById('outRec2').classList.add('show');
+      document.getElementById('statusDot').className = 'status-dot rec';
+      timerSec = 0;
+      document.getElementById('timerDisp').classList.add('on');
+      timerInt = setInterval(() => {
+        timerSec++;
+        const h = String(Math.floor(timerSec/3600)).padStart(2,'0');
+        const m = String(Math.floor((timerSec%3600)/60)).padStart(2,'0');
+        const s = String(timerSec%60).padStart(2,'0');
+        document.getElementById('timerDisp').textContent = `${h}:${m}:${s}`;
+      }, 1000);
+
+    } else {
+      // ── STOP and download
+      clearInterval(timerInt);
+      btn.innerHTML = '⏺ Démarrer l\'enregistrement';
+      btn.classList.remove('recording');
+      btn.style.background = 'var(--teal)';
+      btn.style.color = '#000';
+      document.getElementById('recBadge').classList.remove('show');
+      document.getElementById('outRec1').classList.remove('show');
+      document.getElementById('outRec2').classList.remove('show');
+      document.getElementById('statusDot').className = 'status-dot live';
+      document.getElementById('timerDisp').classList.remove('on');
+
+      const mime = mr1 ? mr1.mimeType : '';
+      const ext = getExt(mime);
+
+      function stopAndDownload(mr, chunks, filename) {
+        mr.onstop = async () => {
+          let blob = new Blob(chunks, {type: mime || 'video/webm'});
+          // Fix missing duration metadata in WebM
+          if (!mime.includes('mp4')) {
+            blob = await fixWebmDuration(blob, timerSec * 1000);
+          }
+          const url = URL.createObjectURL(blob);
+          const a   = document.createElement('a');
+          a.href    = url;
+          a.download = filename + '.' + ext;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        };
+        mr.stop();
+      }
+
+      const n1 = name1.replace(/ /g,'_') + '_' + ratio1.join('x');
+      const n2 = name2.replace(/ /g,'_') + '_' + ratio2.join('x');
+
+      if (mr1) stopAndDownload(mr1, chunks1, n1);
+      if (mr2) stopAndDownload(mr2, chunks2, n2);
+
+      alert('✅ Enregistrement terminé !\n\n📥 Téléchargement des 2 fichiers en cours…\n\nVérifie ton dossier Téléchargements !');
+    }
+  }
+
+  // ── Render loop
+  function startRender() {
+    function draw() {
+      const vw = vidSrc.videoWidth || 1;
+      const vh = vidSrc.videoHeight || 1;
+
+      function crop(cw, ch, canvas, ctx, targetH) {
+        const ar = cw/ch;
+        const sar = vw/vh;
+        let sx,sy,sw,sh;
+        if (sar > ar) { sh=vh; sw=vh*ar; sx=(vw-sw)/2; sy=0; }
+        else          { sw=vw; sh=vw/ar; sx=0; sy=(vh-sh)/2; }
+        const tH = targetH || 120;
+        const tW = Math.round(tH * ar);
+        canvas.height = tH;
+        canvas.width  = tW;
+        ctx.drawImage(vidSrc, sx, sy, sw, sh, 0, 0, tW, tH);
+        return {sx,sy,sw,sh};
+      }
+
+      // Display canvases (small)
+      const r1 = crop(ratio1[0], ratio1[1], cv1, ctx1, 120);
+      const r2 = crop(ratio2[0], ratio2[1], cv2, ctx2, 120);
+
+      // Recording canvases (full res) — only when recording
+      if (recOn && mr1 && mr1.state === 'recording') {
+        const rh = vidSrc.videoHeight || 720;
+        crop(ratio1[0], ratio1[1], recCv1, recCtx1, rh);
+        crop(ratio2[0], ratio2[1], recCv2, recCtx2, rh);
+      }
+
+      // Update output card widths
+      document.getElementById('outCard1').style.width = cv1.width + 'px';
+      document.getElementById('outCard2').style.width = cv2.width + 'px';
+
+      // Draw crop boxes on source
+      const sw = document.getElementById('sourceWrap');
+      const dw = sw.clientWidth;
+      const dh = sw.clientHeight;
+      const sx = dw/vw, sy2 = dh/vh;
+
+      const b1 = document.getElementById('box1');
+      b1.style.left   = (r1.sx*sx)+'px';
+      b1.style.top    = (r1.sy*sy2)+'px';
+      b1.style.width  = (r1.sw*sx)+'px';
+      b1.style.height = (r1.sh*sy2)+'px';
+
+      const b2 = document.getElementById('box2');
+      b2.style.left   = (r2.sx*sx)+'px';
+      b2.style.top    = (r2.sy*sy2)+'px';
+      b2.style.width  = (r2.sw*sx)+'px';
+      b2.style.height = (r2.sh*sy2)+'px';
+
+      raf = requestAnimationFrame(draw);
+    }
+    raf = requestAnimationFrame(draw);
+  }
+
+  // ── Flip camera
+  document.getElementById('btnFlip').addEventListener('click', async () => {
+    facingMode = facingMode === 'user' ? 'environment' : 'user';
+    if (stream) { stream.getTracks().forEach(t => t.stop()); }
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode, width:{ideal:1920}, height:{ideal:1080} },
+      audio: true
+    });
+    vidSrc.srcObject = stream;
+    vidSrc.className = facingMode === 'user' ? '' : 'rear';
+  });
+
+  // ── Format chips
+  function setupChips(id, n, onClass, callback) {
+    document.getElementById(id).querySelectorAll('.chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById(id).querySelectorAll('.chip').forEach(b => {
+          b.classList.remove('on1','on2');
+        });
+        btn.classList.add(onClass);
+        const r = btn.dataset.r.split(',').map(Number);
+        callback(r, btn.dataset.n);
+      });
+    });
+  }
+
+  setupChips('chips1', 1, 'on1', (r, n) => {
+    ratio1 = r; name1 = n;
+    document.getElementById('outLbl1').textContent = n;
+    document.getElementById('outRat1').textContent = r.join(':');
+    document.getElementById('lbl1').textContent = n;
+  });
+
+  setupChips('chips2', 2, 'on2', (r, n) => {
+    ratio2 = r; name2 = n;
+    document.getElementById('outLbl2').textContent = n;
+    document.getElementById('outRat2').textContent = r.join(':');
+    document.getElementById('lbl2').textContent = n;
+  });
+
+  // ── Info
+  document.getElementById('btnInfo').addEventListener('click', () => {
+    alert('🎬 Comment ça marche ?\n\nLa caméra filme en 16:9 pleine résolution.\n\nLe logiciel découpe ce flux en temps réel en 2 formats simultanément — tu vois les cadres colorés sur l\'image source :\n\n🟢 Cadre vert = Sortie 1\n🟡 Cadre amber = Sortie 2\n\nChaque sortie est recadrée et affichée en direct dans les petites fenêtres.\n\nEn production réelle, deux fichiers MP4 distincts seraient exportés automatiquement.');
+  });
+</script>
+</body>
+</html>
